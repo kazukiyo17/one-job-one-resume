@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>职配星 · JobMatchStar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./css/main.css" />
+    <!-- Markdown（提升建议）：marked + DOMPurify，需联网加载（或自建镜像） -->
+    <script type="importmap">
+      {
+        "imports": {
+          "marked": "https://esm.sh/marked@15.0.7",
+          "dompurify": "https://esm.sh/dompurify@3.2.4"
+        }
+      }
+    </script>
+    <!-- 配置：若后端与静态页不同域，在此填写 API 根地址（不要斜杠结尾）。同源反向代理可留空字符串。 -->
+    <script>
+      window.__ENV__ = window.__ENV__ || {};
+      window.__ENV__.API_BASE = "";
+      /* 本地 UI：不调 /api/optimize 时改为 true；上线务必 false */
+      window.__ENV__.MOCK_OPTIMIZE = false;
+      window.__ENV__.MOCK_DELAY_MS = 0;
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header__inner">
+        <span class="logo">JobMatchStar</span>
+        <span class="tagline">让简历匹配心仪岗位 ✨</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="hero card">
+        <h1>嗨，一起把简历擦亮一点</h1>
+        <p class="hero__lead">
+          扔进来你的<strong>简历</strong>和<strong>目标 JD</strong>，稍等片刻——我们会给出<strong>根据JD优化后的简历</strong>，以及<strong>贴心改进小贴士</strong>。
+        </p>
+      </section>
+
+      <form id="form-optimize" class="card form-card" novalidate>
+        <div class="form-grid">
+          <fieldset class="field-group" aria-labelledby="fg-resume-title">
+            <h3 class="field-group__title" id="fg-resume-title">个人简历</h3>
+            <div
+              class="dropzone js-dropzone"
+              role="group"
+              aria-label="简历"
+            >
+              <textarea
+                id="resume-text"
+                name="resume_str"
+                class="dropzone__textarea"
+                rows="9"
+                spellcheck="false"
+                placeholder="简历贴到这里~"
+                aria-describedby="resume-char-count"
+              ></textarea>
+              <input
+                type="file"
+                name="resume_file"
+                id="resume-file"
+                class="dropzone__file-input"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                tabindex="-1"
+                aria-label="选择简历文件"
+              />
+              <div class="dropzone__footer">
+                <button type="button" class="btn btn--ghost btn--small js-pick-file">
+                  选择文件
+                </button>
+                <span class="dropzone__hint js-resume-file-hint">支持 PDF、Word</span>
+                <span
+                  id="resume-char-count"
+                  class="dropzone__hint dropzone__hint--secondary js-resume-text-hint"
+                  aria-live="polite"
+                >0 / 1,500 字</span>
+                <div class="dropzone__file-badge js-file-badge" hidden>
+                  <span class="dropzone__file-name js-file-name"></span>
+                  <button
+                    type="button"
+                    class="dropzone__clear-file js-clear-file"
+                    hidden
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field-group" aria-labelledby="fg-jd-title">
+            <h3 class="field-group__title" id="fg-jd-title">目标岗位 JD</h3>
+            <div
+              class="dropzone js-dropzone"
+              role="group"
+              aria-label="JD"
+            >
+              <textarea
+                id="jd-text"
+                name="job_desc"
+                class="dropzone__textarea"
+                rows="9"
+                spellcheck="false"
+                placeholder="JD 丢到这里~"
+                aria-describedby="jd-char-count"
+              ></textarea>
+              <input
+                type="file"
+                name="jd_file"
+                id="jd-file"
+                class="dropzone__file-input"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                tabindex="-1"
+                aria-label="选择 JD 文件"
+              />
+              <div class="dropzone__footer">
+                <button type="button" class="btn btn--ghost btn--small js-pick-file">
+                  选择文件
+                </button>
+                <span class="dropzone__hint js-jd-file-hint">支持 PDF、Word</span>
+                <span
+                  id="jd-char-count"
+                  class="dropzone__hint dropzone__hint--secondary js-jd-text-hint"
+                  aria-live="polite"
+                >0 / 1,000 字</span>
+                <div class="dropzone__file-badge js-file-badge" hidden>
+                  <span class="dropzone__file-name js-file-name"></span>
+                  <button
+                    type="button"
+                    class="dropzone__clear-file js-clear-file"
+                    hidden
+                  >
+                    移除
+                  </button>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+        </div>
+
+        <p id="form-hint" class="form-hint" role="status"></p>
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary" id="btn-submit">开跑优化</button>
+          <button type="reset" class="btn btn--ghost">清空</button>
+        </div>
+        <p class="hero__privacy" role="note">
+          <strong>隐私说明：</strong>本站不会在服务器存储你的个人信息、简历或 JD；生成结果也不会替你存档。<strong>请在生成后尽快自行保存</strong>。
+        </p>
+      </form>
+
+      <div id="panel-status" class="panel-status panel-status--hidden" aria-live="polite"></div>
+
+      <section id="panel-results" class="results panel-results--hidden">
+        <div class="card">
+          <h2 class="results__title">搞定啦，看看效果</h2>
+
+          <div class="tabs" role="tablist">
+            <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-tab="analysis">简历分析</button>
+            <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-tab="text">优化简历</button>
+            <button type="button" class="tabs__btn is-active" role="tab" aria-selected="true" data-tab="html">导出简历</button>
+            <button type="button" class="tabs__btn" role="tab" aria-selected="false" data-tab="tips">提升建议</button>
+          </div>
+
+          <div id="tab-html" class="tab-panel is-active" role="tabpanel">
+            <div class="preview-wrap">
+              <iframe id="preview-frame" title="优化简历预览" sandbox=""></iframe>
+              <button
+                type="button"
+                class="btn btn--ghost btn--small btn-preview-float"
+                id="btn-open-resume-tab"
+              >
+                在新标签页打开
+              </button>
+            </div>
+          </div>
+          <div id="tab-text" class="tab-panel" role="tabpanel" hidden>
+            <div id="out-text" class="out-tips md-body"></div>
+          </div>
+          <div id="tab-analysis" class="tab-panel" role="tabpanel" hidden>
+            <div id="out-analysis" class="out-tips md-body"></div>
+          </div>
+          <div id="tab-tips" class="tab-panel" role="tabpanel" hidden>
+            <div id="out-tips" class="out-tips md-body"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>funsite.online</p>
+    </footer>
+
+    <script type="module" src="./js/main.js"></script>
+  </body>
+</html>
