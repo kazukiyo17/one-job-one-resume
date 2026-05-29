@@ -228,47 +228,192 @@ async function difyRunWorkflow(baseUrl, apiKey, inputs, user) {
 }
 
 /**
+ * @param {unknown} raw
+ * @returns {Record<string, unknown> | null}
+ */
+function parseResumeObject(raw) {
+  if (raw == null) return null;
+  let obj = null;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    obj = /** @type {Record<string, unknown>} */ (raw);
+  } else if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        obj = /** @type {Record<string, unknown>} */ (parsed);
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (!obj) return null;
+  return normalizeResume(obj);
+}
+
+/** @param {unknown} v */
+function str(v) {
+  return typeof v === "string" ? v.trim() : v != null ? String(v).trim() : "";
+}
+
+/**
+ * @param {Record<string, unknown>} obj
+ * @param {string[]} keys
+ */
+function pickFields(obj, keys) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const k of keys) out[k] = str(obj[k]);
+  return out;
+}
+
+/** @param {Record<string, string>} item */
+function hasEntryContent(item) {
+  return Object.values(item).some((v) => v.length > 0);
+}
+
+/**
+ * @param {unknown} v
+ * @param {string[]} keys
+ * @param {Record<string, string>} [fallback]
+ */
+function normalizeEntryList(v, keys, fallback = {}) {
+  if (Array.isArray(v)) {
+    return v
+      .filter((x) => x && typeof x === "object" && !Array.isArray(x))
+      .map((x) => pickFields(/** @type {Record<string, unknown>} */ (x), keys))
+      .filter(hasEntryContent);
+  }
+  const text = str(v);
+  if (!text) return [];
+  return [{ ...fallback, [keys[keys.length - 1]]: text }];
+}
+
+/** @param {Record<string, unknown>} raw */
+function normalizeBasic(raw) {
+  const legacyBasic =
+    raw.basic && typeof raw.basic === "object" && !Array.isArray(raw.basic)
+      ? /** @type {Record<string, unknown>} */ (raw.basic)
+      : null;
+  const profile =
+    raw.profile && typeof raw.profile === "object" && !Array.isArray(raw.profile)
+      ? /** @type {Record<string, unknown>} */ (raw.profile)
+      : null;
+  const pick = (key) =>
+    str(legacyBasic?.[key] ?? profile?.[key] ?? raw[key]);
+  return {
+    name: pick("name"),
+    title: pick("title"),
+    email: pick("email"),
+    phone: pick("phone"),
+    location: pick("location"),
+    summary: pick("summary"),
+  };
+}
+
+/** @param {Record<string, unknown>} raw */
+function normalizeResume(raw) {
+  const basic = normalizeBasic(raw);
+  let experience = normalizeEntryList(raw.experience, [
+    "company",
+    "role",
+    "period",
+    "description",
+  ]);
+  let education = normalizeEntryList(raw.education, [
+    "school",
+    "degree",
+    "period",
+    "description",
+  ]);
+  let projects = normalizeEntryList(raw.projects, [
+    "name",
+    "role",
+    "period",
+    "description",
+  ]);
+  let activities = normalizeEntryList(raw.activities, [
+    "name",
+    "role",
+    "period",
+    "description",
+  ]);
+  let skills = [];
+  if (Array.isArray(raw.skills)) {
+    skills = raw.skills
+      .filter((x) => x && typeof x === "object" && !Array.isArray(x))
+      .map((x) => {
+        const o = /** @type {Record<string, unknown>} */ (x);
+        return { category: str(o.category), items: str(o.items) };
+      })
+      .filter((s) => s.category || s.items);
+  } else {
+    const text = str(raw.skills);
+    if (text) skills = [{ category: "", items: text }];
+  }
+  const legacyContent = str(raw.content) || str(raw.body);
+  if (legacyContent && experience.length === 0) {
+    experience = [
+      { company: "", role: "", period: "", description: legacyContent },
+    ];
+  }
+  if (!basic.name && !basic.title) return null;
+  return { basic, experience, education, projects, activities, skills };
+}
+
+/** @param {Record<string, unknown>} resume */
+function isValidResume(resume) {
+  const basic =
+    resume.basic && typeof resume.basic === "object"
+      ? /** @type {Record<string, unknown>} */ (resume.basic)
+      : null;
+  if (!basic || !str(basic.name) || !str(basic.title)) return false;
+  for (const key of [
+    "experience",
+    "education",
+    "projects",
+    "activities",
+    "skills",
+  ]) {
+    const list = resume[key];
+    if (Array.isArray(list) && list.length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * @param {Record<string, unknown>} outputs
+ * @param {string} key
+ */
+function pickText(outputs, key) {
+  const v = outputs[key];
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+/**
+ * Workflow outputs: resume_json, analyse, suggestions only.
  * @param {Record<string, unknown>} outputs
  * @param {Record<string, string | undefined>} env
  */
 function mapOutputs(outputs, env) {
-  const kText = env.DIFY_OUTPUT_TEXT || "resume_text";
-  const kHtml = env.DIFY_OUTPUT_HTML || "resume_html";
+  const kResume = env.DIFY_OUTPUT_RESUME || "resume_json";
   const kTips = env.DIFY_OUTPUT_SUGGESTIONS || "suggestions";
   const kAnalysis = env.DIFY_OUTPUT_ANALYSIS || "analyse";
-  const kMatch = env.DIFY_OUTPUT_MATCH || "matchScore";
-  const kChange =
-    env.DIFY_OUTPUT_CHANGELOG || "modificationPoints";
 
-  const pick = (key) => {
-    const v = outputs[key];
-    if (v == null) return "";
-    if (typeof v === "string") return v;
-    if (typeof v === "number") return String(v);
-    try {
-      return JSON.stringify(v);
-    } catch {
-      return String(v);
-    }
-  };
-
-  let matchScore = outputs[kMatch];
-  if (typeof matchScore === "string") {
-    const n = parseFloat(matchScore);
-    matchScore = Number.isFinite(n) ? n : matchScore;
-  }
-  if (typeof matchScore !== "number") {
-    const m = String(pick(kMatch) || "").match(/(\d{1,3})\s*%/);
-    matchScore = m ? Number(m[1]) : undefined;
-  }
+  const resume = parseResumeObject(outputs[kResume]);
 
   return {
-    matchScore,
-    optimizedText: pick(kText),
-    html: pick(kHtml),
-    suggestions: pick(kTips),
-    analysis: pick(kAnalysis),
-    modificationPoints: pick(kChange),
+    resume,
+    suggestions: pickText(outputs, kTips),
+    analysis: pickText(outputs, kAnalysis),
   };
 }
 
@@ -444,9 +589,8 @@ export async function onRequestPost(context) {
       };
     }
 
-    console.log('inputs', inputs);
     const wf = await difyRunWorkflow(baseUrl, apiKey, inputs, user);
-    console.log('wf', wf);
+    console.log("[optimize] Dify workflow raw:", JSON.stringify(wf, null, 2));
 
     const dataBlock = wf.data ?? wf;
     const status = dataBlock.status ?? wf.status;
@@ -468,8 +612,34 @@ export async function onRequestPost(context) {
       (typeof dataBlock.outputs === "object" && dataBlock.outputs) ||
       (typeof wf.outputs === "object" && wf.outputs) ||
       {};
-    console.log('outputs', outputs);
+    console.log("[optimize] Dify workflow outputs:", JSON.stringify(outputs, null, 2));
+
     const mapped = mapOutputs(outputs, env);
+    console.log(
+      "[optimize] mapped response:",
+      JSON.stringify(
+        {
+          resume: mapped.resume,
+          analysis: mapped.analysis,
+          suggestions: mapped.suggestions,
+        },
+        null,
+        2,
+      ),
+    );
+    if (!mapped.resume || !isValidResume(mapped.resume)) {
+      return jsonBody(
+        502,
+        {
+          error: {
+            code: "INVALID_RESUME_JSON",
+            message:
+              "工作流 resume_json 须含 basic.name、basic.title，且 experience/education/projects/activities/skills 至少一项为非空数组。",
+          },
+        },
+        env,
+      );
+    }
     const requestId =
       wf.workflow_run_id ||
       dataBlock.id ||

@@ -1,11 +1,7 @@
-import { getOptimizeUrl, getConfig } from "../config.js";
-import { getMockOptimizeResponse } from "./mock-optimize.js";
+import { getConfig, getOptimizeUrl } from "../config";
+import { getMockOptimizeResponse } from "./mock-optimize";
 
-/**
- * @param {number} ms
- * @param {AbortSignal} [signal]
- */
-function sleep(ms, signal) {
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0) return Promise.resolve();
   return new Promise((resolve, reject) => {
     const onAbort = () => {
@@ -29,19 +25,24 @@ function sleep(ms, signal) {
   });
 }
 
-/**
- * @param {FormData} formData
- * @param {AbortSignal} [signal]
- * @returns {Promise<{ matchScore?: number, optimizedText?: string, html?: string, analysis?: string, suggestions?: string, modificationPoints?: string }>}
- */
-export async function postOptimize(formData, signal) {
+export type OptimizeResponse = {
+  resume?: Record<string, unknown>;
+  analysis?: string;
+  suggestions?: string;
+  meta?: { requestId?: string };
+};
+
+export async function postOptimize(
+  formData: FormData,
+  signal?: AbortSignal,
+): Promise<OptimizeResponse> {
   const { timeoutMs, mockOptimize, mockDelayMs } = getConfig();
 
   if (mockOptimize) {
     try {
       await sleep(mockDelayMs, signal);
     } catch (e) {
-      if (e && typeof e === "object" && "name" in e && e.name === "AbortError") {
+      if (e instanceof Error && e.name === "AbortError") {
         throw new Error("请求超时或已取消，请稍后重试。");
       }
       throw e;
@@ -56,7 +57,7 @@ export async function postOptimize(formData, signal) {
     signal.addEventListener("abort", () => ctrl.abort(), { once: true });
   }
 
-  let res;
+  let res: Response;
   try {
     res = await fetch(url, {
       method: "POST",
@@ -65,7 +66,7 @@ export async function postOptimize(formData, signal) {
     });
   } catch (e) {
     clearTimeout(t);
-    if (e.name === "AbortError") {
+    if (e instanceof Error && e.name === "AbortError") {
       throw new Error("请求超时或已取消，请稍后重试。");
     }
     throw new Error("网络异常，请检查网络或 API 地址配置。");
@@ -73,18 +74,17 @@ export async function postOptimize(formData, signal) {
   clearTimeout(t);
 
   const text = await res.text();
-  let data = null;
+  let data: OptimizeResponse & { error?: { message?: string }; message?: string } | null =
+    null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
-    /* 非 JSON */
+    /* non-JSON */
   }
 
   if (!res.ok) {
     const msg =
-      data?.error?.message ||
-      data?.message ||
-      `请求失败（${res.status}）`;
+      data?.error?.message || data?.message || `请求失败（${res.status}）`;
     throw new Error(msg);
   }
 

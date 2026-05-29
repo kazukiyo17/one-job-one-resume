@@ -3,3 +3,7 @@
 .edgeone/*
 .tef_dist/*
 test/*
+
+# Frontend (Vite + React)
+node_modules/
+dist/

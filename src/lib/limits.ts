@@ -1,68 +1,56 @@
-/** @typedef {{ maxFileBytes: number, maxResumeText: number, maxJdText: number, maxRequestBytes: number }} PayloadLimits */
+import { getLimitsEnv } from "../config";
+
+export type PayloadLimits = {
+  maxFileBytes: number;
+  maxResumeText: number;
+  maxJdText: number;
+  maxRequestBytes: number;
+};
 
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESUME_TEXT = 2800;
 const DEFAULT_MAX_JD_TEXT = 1000;
 const DEFAULT_MAX_REQUEST_BYTES = 12 * 1024 * 1024;
 
-/**
- * @param {unknown} value
- * @param {number} fallback
- */
-function parsePositiveInt(value, fallback) {
+function parsePositiveInt(value: unknown, fallback: number): number {
   if (value == null || value === "") return fallback;
   const n =
     typeof value === "number" ? value : parseInt(String(value).trim(), 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/**
- * @param {Record<string, unknown>} [source]
- * @returns {PayloadLimits}
- */
-function resolveLimits(source) {
-  const env = source ?? {};
+function resolveLimits(source: Record<string, unknown>): PayloadLimits {
   return {
-    maxFileBytes: parsePositiveInt(env.MAX_FILE_BYTES, DEFAULT_MAX_FILE_BYTES),
+    maxFileBytes: parsePositiveInt(
+      source.MAX_FILE_BYTES,
+      DEFAULT_MAX_FILE_BYTES,
+    ),
     maxResumeText: parsePositiveInt(
-      env.MAX_RESUME_TEXT_CHARS,
+      source.MAX_RESUME_TEXT_CHARS,
       DEFAULT_MAX_RESUME_TEXT,
     ),
-    maxJdText: parsePositiveInt(env.MAX_JD_TEXT_CHARS, DEFAULT_MAX_JD_TEXT),
+    maxJdText: parsePositiveInt(source.MAX_JD_TEXT_CHARS, DEFAULT_MAX_JD_TEXT),
     maxRequestBytes: parsePositiveInt(
-      env.MAX_REQUEST_BYTES,
+      source.MAX_REQUEST_BYTES,
       DEFAULT_MAX_REQUEST_BYTES,
     ),
   };
 }
 
-/** @returns {PayloadLimits} */
-export function getLimits() {
-  const env =
-    typeof window !== "undefined" && window.__ENV__ ? window.__ENV__ : {};
-  return resolveLimits(env);
+export function getLimits(): PayloadLimits {
+  return resolveLimits(getLimitsEnv() as Record<string, unknown>);
 }
 
-/**
- * @param {number} bytes
- */
-export function formatFileLimit(bytes) {
+export function formatFileLimit(bytes: number): string {
   const mb = bytes / (1024 * 1024);
   return mb % 1 === 0 ? `${mb}MB` : `${mb.toFixed(1)}MB`;
 }
 
-/**
- * @param {number} current
- * @param {number} max
- */
-export function formatCharCount(current, max) {
+export function formatCharCount(current: number, max: number): string {
   return `${current.toLocaleString()} / ${max.toLocaleString()} 字`;
 }
 
-/**
- * @param {PayloadLimits} limits
- */
-export function formatLimitHints(limits) {
+export function formatLimitHints(limits: PayloadLimits) {
   return {
     file: `单文件 ≤ ${formatFileLimit(limits.maxFileBytes)}`,
     resumeText: `简历文本 ≤ ${limits.maxResumeText.toLocaleString()} 字`,
@@ -70,12 +58,15 @@ export function formatLimitHints(limits) {
   };
 }
 
-/**
- * @param {{ resumeText: string, jdText: string, resumeFile: File | null, jdFile: File | null }} payload
- * @param {PayloadLimits} limits
- * @returns {{ code: string, message: string, status: number } | null}
- */
-export function validateOptimizePayload(payload, limits) {
+export function validateOptimizePayload(
+  payload: {
+    resumeText: string;
+    jdText: string;
+    resumeFile: File | null;
+    jdFile: File | null;
+  },
+  limits: PayloadLimits,
+): { code: string; message: string; status: number } | null {
   const { resumeText, jdText, resumeFile, jdFile } = payload;
 
   if (resumeText.length > limits.maxResumeText) {

@@ -1,15 +1,12 @@
-import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { marked } from "marked";
 
 marked.use({
   gfm: true,
   breaks: true,
 });
 
-/**
- * @param {unknown} raw API `suggestions`：字符串（Markdown）或其它（序列化为代码块）
- */
-function normalizeSuggestionsSource(raw) {
+function normalizeSuggestionsSource(raw: unknown): string {
   if (raw == null) return "";
   if (typeof raw === "string") return raw;
   try {
@@ -19,15 +16,11 @@ function normalizeSuggestionsSource(raw) {
   }
 }
 
-/**
- * @param {unknown} raw
- * @returns {string} 可赋给 innerHTML 的安全 HTML
- */
-export function renderSuggestionsMarkdown(raw) {
+export function renderSuggestionsMarkdown(raw: unknown): string {
   const text = normalizeSuggestionsSource(raw).trim();
   if (!text) return "";
   try {
-    const dirty = marked.parse(text);
+    const dirty = marked.parse(text) as string;
     return DOMPurify.sanitize(dirty, { USE_PROFILES: { html: true } });
   } catch {
     const wrap = document.createElement("div");

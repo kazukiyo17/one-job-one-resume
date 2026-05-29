@@ -5,24 +5,21 @@ const FILE_STORE = "draft-files";
 const RESUME_FILE_KEY = "resume_file";
 const JD_FILE_KEY = "jd_file";
 
-/**
- * @typedef {object} FormDraft
- * @property {string} resumeText
- * @property {string} jobDesc
- * @property {File | null} resumeFile
- * @property {File | null} jdFile
- */
+export type FormDraft = {
+  resumeText: string;
+  jobDesc: string;
+  resumeFile: File | null;
+  jdFile: File | null;
+};
 
-/**
- * @typedef {object} FileRecord
- * @property {string} name
- * @property {string} type
- * @property {number} lastModified
- * @property {ArrayBuffer} buffer
- */
+type FileRecord = {
+  name: string;
+  type: string;
+  lastModified: number;
+  buffer: ArrayBuffer;
+};
 
-/** @type {Promise<IDBDatabase> | null} */
-let dbPromise = null;
+let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb() {
   if (dbPromise) return dbPromise;
@@ -40,11 +37,7 @@ function openDb() {
   return dbPromise;
 }
 
-/**
- * @param {string} key
- * @returns {Promise<unknown>}
- */
-async function idbGet(key) {
+async function idbGet(key: string): Promise<unknown> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(FILE_STORE, "readonly");
@@ -54,13 +47,9 @@ async function idbGet(key) {
   });
 }
 
-/**
- * @param {string} key
- * @param {unknown} value
- */
-async function idbSet(key, value) {
+async function idbSet(key: string, value: unknown) {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(FILE_STORE, "readwrite");
     tx.objectStore(FILE_STORE).put(value, key);
     tx.oncomplete = () => resolve();
@@ -68,10 +57,9 @@ async function idbSet(key, value) {
   });
 }
 
-/** @param {string} key */
-async function idbDelete(key) {
+async function idbDelete(key: string) {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(FILE_STORE, "readwrite");
     tx.objectStore(FILE_STORE).delete(key);
     tx.oncomplete = () => resolve();
@@ -81,7 +69,7 @@ async function idbDelete(key) {
 
 async function idbClearFiles() {
   const db = await openDb();
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(FILE_STORE, "readwrite");
     tx.objectStore(FILE_STORE).clear();
     tx.oncomplete = () => resolve();
@@ -89,14 +77,9 @@ async function idbClearFiles() {
   });
 }
 
-/**
- * @param {string} key
- * @param {File} file
- */
-async function storeFile(key, file) {
+async function storeFile(key: string, file: File) {
   const buffer = await file.arrayBuffer();
-  /** @type {FileRecord} */
-  const record = {
+  const record: FileRecord = {
     name: file.name,
     type: file.type,
     lastModified: file.lastModified,
@@ -105,12 +88,8 @@ async function storeFile(key, file) {
   await idbSet(key, record);
 }
 
-/**
- * @param {string} key
- * @returns {Promise<File | null>}
- */
-async function loadFile(key) {
-  const record = /** @type {FileRecord | null} */ (await idbGet(key));
+async function loadFile(key: string): Promise<File | null> {
+  const record = (await idbGet(key)) as FileRecord | null;
   if (!record?.buffer) return null;
   return new File([record.buffer], record.name, {
     type: record.type,
@@ -118,10 +97,12 @@ async function loadFile(key) {
   });
 }
 
-/**
- * @param {{ resumeText?: string, jobDesc?: string, resumeFile?: File | null, jdFile?: File | null }} payload
- */
-export async function saveFormDraft(payload) {
+export async function saveFormDraft(payload: {
+  resumeText?: string;
+  jobDesc?: string;
+  resumeFile?: File | null;
+  jdFile?: File | null;
+}) {
   const meta = {
     v: 1,
     resumeText: String(payload.resumeText ?? ""),
@@ -147,14 +128,11 @@ export async function saveFormDraft(payload) {
 
     sessionStorage.setItem(TEXT_KEY, JSON.stringify(meta));
   } catch {
-    /* 配额或隐私模式等：忽略 */
+    /* quota / private mode */
   }
 }
 
-/**
- * @returns {Promise<FormDraft | null>}
- */
-export async function loadFormDraft() {
+export async function loadFormDraft(): Promise<FormDraft | null> {
   try {
     const raw = sessionStorage.getItem(TEXT_KEY);
     if (!raw) {
