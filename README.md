@@ -15,7 +15,7 @@
 | 优化结果    | iframe 内预览 HTML 简历，可新标签页打开另存                                  |
 | 提升建议    | `suggestions` 字段按 Markdown 渲染（`marked` + `DOMPurify`）         |
 | 本地 mock | `index.html` 或 `.env` 中 `MOCK_OPTIMIZE=true` 时无需后端即可调试 UI   |
-| 限流      | 可选 KV 固定窗口限流（按 IP / 全站），见 `cloud-functions/api/rate-limit.js` |
+| 限流      | Edge Functions + Pages KV 固定窗口限流（按 IP / 全站），见 `edge-functions/lib/rate-limit.js` |
 
 
 页面提示用户自行保存生成内容；本站不落库存储用户简历。
@@ -25,7 +25,7 @@
 ## 技术栈
 
 - **前端**：React 19 + TypeScript + Vite，构建产物输出至 `dist/`
-- **后端**：`cloud-functions/api/optimize.js`（`POST /api/optimize`，multipart → Dify 上传与工作流）
+- **后端**：`edge-functions/api/optimize.js`（KV 限流）→ `cloud-functions/api/node/optimize.js`（Dify 工作流）
 - **托管**：EdgeOne Pages 静态资源 + Cloud Functions（`edgeone.json` 默认 `maxDuration` 120s）
 - **AI**：Dify Workflow；API Key 仅在后端环境变量中配置
 
@@ -37,9 +37,11 @@
 resume-promote/
 ├── index.html, src/               # React 前端源码（Vite 入口）
 ├── dist/                          # npm run build 产物（部署用）
-├── cloud-functions/api/
-│   ├── optimize.js                # 主 API
-│   └── rate-limit.js              # KV 限流
+├── edge-functions/
+│   ├── api/optimize.js            # 对外 /api/optimize（KV 限流 + 转发 Node）
+│   └── lib/rate-limit.js          # KV 限流（Edge Functions 专用）
+├── cloud-functions/api/node/
+│   └── optimize.js                # Dify 工作流（内部 /api/node/optimize）
 ├── edgeone.json                   # Cloud Functions 配置
 ├── docs/
 │   └── design.md                  # 需求、实现与 API 契约
@@ -113,16 +115,19 @@ EdgeOne Pages 部署前端时，在控制台配置构建命令 `npm ci && npm ru
 | `DIFY_OUTPUT_*`    | 否   | 工作流输出映射，仅 `resume_json` / `analyse` / `suggestions` → API `resume` / `analysis` / `suggestions` |
 | `CORS_ORIGIN`      | 否   | 默认 `*`；上线建议改为站点 Origin                                             |
 | `MAX_FILE_BYTES` 等 | 否   | 上传与文本长度限制                                                          |
-| `RATE_LIMIT_*`     | 否   | KV 限流，详见 `rate-limit.js` 文件头注释                                     |
+| `RATE_LIMIT_*`     | 否   | KV 限流（Edge Functions），详见 `edge-functions/lib/rate-limit.js`           |
 
 
 完整示例见 `.env.example`。
 
 ### KV 限流（生产推荐）
 
+Pages KV **仅支持 Edge Functions**（不支持 Node Cloud Functions）。限流在 `edge-functions/api/optimize.js` 执行，通过后转发至 Node 处理 Dify。
+
 1. 在 [Pages 控制台](https://console.tencentcloud.com/edgeone/pages) 开通 KV，创建 Namespace 并绑定到项目。
-2. 绑定变量名与 `RATE_LIMIT_KV_BINDING` 一致（默认 `RESUME_PROMOTE_KV`）。
-3. 配置 `RATE_LIMIT_IP_MAX_REQUESTS`、`RATE_LIMIT_GLOBAL_MAX_REQUESTS` 等；超限返回 `429`，`error.code` 为 `RATE_LIMIT_IP_EXCEEDED` 或 `RATE_LIMIT_GLOBAL_EXCEEDED`。
+2. 绑定 **Variable Name** 与 `RATE_LIMIT_KV_BINDING` 一致（默认 `RESUME_PROMOTE_KV`）；代码中通过同名全局变量访问 KV。
+3. 设置 `RATE_LIMIT_ENABLED=true` 及 `RATE_LIMIT_IP_MAX_REQUESTS` 等；超限返回 `429`，`error.code` 为 `RATE_LIMIT_IP_EXCEEDED` 或 `RATE_LIMIT_GLOBAL_EXCEEDED`。
+4. 本地调试需 `edgeone pages link` 同步 KV 绑定；未绑定时默认 fail-open。
 
 ---
 

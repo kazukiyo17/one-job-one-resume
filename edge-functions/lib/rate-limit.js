@@ -1,6 +1,11 @@
 /**
- * EdgeOne Pages KV · 固定窗口限流（支持按 IP + 全站）。
- * 绑定变量名由 RATE_LIMIT_KV_BINDING 指定（默认 RESUME_PROMOTE_KV）。
+ * EdgeOne Pages KV · 固定窗口限流（Edge Functions 专用）。
+ *
+ * 官方接入方式：在控制台绑定 Namespace 时填写 Variable Name（默认 RESUME_PROMOTE_KV），
+ * 运行时以同名全局变量访问，例如 `await RESUME_PROMOTE_KV.get(key)`。
+ * 参见 https://pages.edgeone.ai/document/pages-kv-integration
+ *
+ * KV 仅支持 Edge Functions，不支持 Node Cloud Functions。
  */
 
 const DEFAULT_BINDING = "RESUME_PROMOTE_KV";
@@ -94,26 +99,19 @@ export function getRateLimitConfig(env) {
  */
 
 /**
- * @param {Record<string, unknown>} env
+ * EdgeOne 将绑定的 Namespace 注入为与 Variable Name 同名的全局变量。
+ * @param {string} bindingName
  * @returns {KvClient | null}
  */
-export function resolveRateLimitKv(env) {
-  const { bindingName } = getRateLimitConfig(env);
-  const fromEnv = env[bindingName];
+export function resolveRateLimitKv(bindingName) {
+  const kv = globalThis[bindingName];
   if (
-    fromEnv &&
-    typeof fromEnv === "object" &&
-    typeof /** @type {KvClient} */ (fromEnv).get === "function"
+    kv &&
+    typeof kv === "object" &&
+    typeof /** @type {KvClient} */ (kv).get === "function" &&
+    typeof /** @type {KvClient} */ (kv).put === "function"
   ) {
-    return /** @type {KvClient} */ (fromEnv);
-  }
-  const fromGlobal = globalThis[bindingName];
-  if (
-    fromGlobal &&
-    typeof fromGlobal === "object" &&
-    typeof /** @type {KvClient} */ (fromGlobal).get === "function"
-  ) {
-    return /** @type {KvClient} */ (fromGlobal);
+    return /** @type {KvClient} */ (kv);
   }
   return null;
 }
@@ -196,7 +194,6 @@ async function writeCount(kv, key, nextCount) {
  * @param {KvClient} kv
  * @param {LimitRule} rule
  * @param {boolean} failOpen
- * @returns {Promise<{ ok: true, count: number } | { ok: false, retryAfterSec: number, message: string, code: string }>}
  */
 async function inspectRule(kv, rule, failOpen) {
   try {
@@ -228,17 +225,54 @@ async function inspectRule(kv, rule, failOpen) {
 }
 
 /**
- * @param {Request} request
- * @param {Record<string, unknown>} env
- * @returns {Promise<{ allowed: true } | { allowed: false, retryAfterSec: number, message: string, code: string }>}
+ * @param {Record<string, string | undefined>} env
  */
-export async function checkRateLimit(request, env) {
-  const config = getRateLimitConfig(env);
+function corsHeaders(env) {
+  const origin = env.CORS_ORIGIN || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
+/**
+ * @param {{ allowed: false, retryAfterSec: number, message: string, code: string }} rate
+ * @param {Record<string, string | undefined>} env
+ */
+export function rateLimitResponse(rate, env) {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: rate.code || "RATE_LIMIT_EXCEEDED",
+        message: rate.message,
+      },
+    }),
+    {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json; charset=UTF-8",
+        "Retry-After": String(rate.retryAfterSec),
+        ...corsHeaders(env),
+      },
+    },
+  );
+}
+
+/**
+ * @param {{ request: Request, env?: Record<string, unknown>, clientIp?: string }} ctx
+ */
+export async function checkRateLimit(ctx) {
+  const { request, env = {}, clientIp } = ctx;
+  const config = getRateLimitConfig(
+    /** @type {Record<string, unknown>} */ (env),
+  );
   if (!config.enabled) {
     return { allowed: true };
   }
 
-  const kv = resolveRateLimitKv(env);
+  const kv = resolveRateLimitKv(config.bindingName);
   if (!kv) {
     if (config.failOpen) {
       console.warn(
@@ -268,7 +302,7 @@ export async function checkRateLimit(request, env) {
   }
 
   if (config.ip.enabled) {
-    const ip = getClientIp(request);
+    const ip = clientIp || getClientIp(request);
     const id = windowId(config.ip.windowSec);
     rules.push({
       key: `${config.keyPrefix}_rl_${ipToKeyPart(ip)}_${id}`,

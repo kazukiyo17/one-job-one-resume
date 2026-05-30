@@ -1,11 +1,9 @@
 /**
  * Pages Functions · Cloud Functions（Node.js）
- * 路由：POST /api/optimize（与 cloud-functions/api/optimize.js 对应）
+ * 内部路由：POST /api/node/optimize（由 edge-functions/api/optimize.js 转发）
  *
- * 为何不用 Edge Functions：边缘函数单次 CPU 约 200ms、请求体约 1MB，不适合多轮 LLM 工作流。
+ * Dify 工作流在此执行：Edge Functions CPU/请求体限制不适合多轮 LLM。
  */
-
-import { checkRateLimit } from "./rate-limit.js";
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=UTF-8" };
 
@@ -440,21 +438,6 @@ export async function onRequestPost(context) {
         },
       },
       env,
-    );
-  }
-
-  const rate = await checkRateLimit(request, env);
-  if (!rate.allowed) {
-    return jsonBody(
-      429,
-      {
-        error: {
-          code: rate.code || "RATE_LIMIT_EXCEEDED",
-          message: rate.message,
-        },
-      },
-      env,
-      { "Retry-After": String(rate.retryAfterSec) },
     );
   }
 
